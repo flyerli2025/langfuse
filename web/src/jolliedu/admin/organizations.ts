@@ -7,6 +7,10 @@ import { verifyJolliEduAdminAuth } from "@/src/jolliedu/auth";
 const CreateOrgBody = z.object({
   name: z.string().min(1).max(60),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  // Optional: attach this existing user as OWNER in the same transaction, so
+  // the org is visible in their UI. Omit for a headless org (machine
+  // provisioning) that no user can see until a membership is added.
+  ownerEmail: z.email().optional(),
 });
 
 /**
@@ -16,6 +20,11 @@ const CreateOrgBody = z.object({
  *
  *   POST /api/jolliedu/admin/organizations   -> create an organization
  *   GET  /api/jolliedu/admin/organizations   -> list organizations
+ *
+ * A static bearer token has no "creator" user, so orgs are headless by
+ * default. Pass `ownerEmail` to attach an existing user as OWNER (the MIT
+ * router does this implicitly for the session user) and make the org visible
+ * in that user's UI.
  */
 export async function handleJolliEduOrganizations(
   req: NextApiRequest,
@@ -26,11 +35,33 @@ export async function handleJolliEduOrganizations(
   try {
     if (req.method === "POST") {
       const body = CreateOrgBody.parse(req.body);
+
+      let ownerUserId: string | undefined;
+      if (body.ownerEmail) {
+        const user = await prisma.user.findUnique({
+          where: { email: body.ownerEmail },
+          select: { id: true },
+        });
+        if (!user) {
+          return res
+            .status(400)
+            .json({ error: `No user found with email ${body.ownerEmail}` });
+        }
+        ownerUserId = user.id;
+      }
+
       const organization = await prisma.organization.create({
         data: {
           name: body.name,
           ...(body.metadata
             ? { metadata: body.metadata as Prisma.InputJsonValue }
+            : {}),
+          ...(ownerUserId
+            ? {
+                organizationMemberships: {
+                  create: { userId: ownerUserId, role: "OWNER" },
+                },
+              }
             : {}),
         },
       });
@@ -39,6 +70,7 @@ export async function handleJolliEduOrganizations(
         name: organization.name,
         createdAt: organization.createdAt,
         metadata: organization.metadata,
+        owner: body.ownerEmail ?? null,
       });
     }
 

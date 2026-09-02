@@ -130,9 +130,11 @@ export TOKEN="$SELF_ADMIN_API_KEY"
 export BASE="http://localhost:3000"
 
 # 1. create an organization
+#    Pass "ownerEmail" to attach an existing user as OWNER so the org shows in
+#    their UI; omit it for a headless org (invisible until a member is added).
 ORG=$(curl -s "$BASE/api/jolliedu/admin/organizations" -X POST \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"name":"My Org"}')
+  -d '{"name":"My Org","ownerEmail":"you@example.com"}')
 ORG_ID=$(echo "$ORG" | jq -r .id)
 
 # 2. create a project in that org
@@ -176,6 +178,9 @@ rejected by ingestion.
   cannot ingest.
 - **Deletion is async.** Project/trace deletion enqueues jobs; the running
   `langfuse-worker` purges ClickHouse/S3. Responses return `202`.
+- **Org visibility needs a member.** A static token has no creator user, so
+  orgs are headless (invisible in the UI) unless you pass `ownerEmail` on
+  create to attach an existing user as OWNER.
 - **Org deletion is not implemented** here — the MIT `organization.delete`
   requires every project to be deleted first (relies on cascade). Add a
   `data-deletion/orgDeletion.ts` handler if needed.
