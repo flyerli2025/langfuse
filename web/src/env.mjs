@@ -347,6 +347,9 @@ export const env = createEnv({
     // EE License
     LANGFUSE_EE_LICENSE_KEY: z.string().optional(),
     ADMIN_API_KEY: z.string().optional(),
+    // Self-built (non-EE) admin API bearer token. When set, enables the
+    // internal-admin REST endpoints under /api/internal-admin/*.
+    SELF_ADMIN_API_KEY: z.string().optional(),
     ENCRYPTION_KEY: z
       .string()
       .length(
@@ -1023,6 +1026,7 @@ export const env = createEnv({
     // EE License
     LANGFUSE_EE_LICENSE_KEY: process.env.LANGFUSE_EE_LICENSE_KEY,
     ADMIN_API_KEY: process.env.ADMIN_API_KEY,
+    SELF_ADMIN_API_KEY: process.env.SELF_ADMIN_API_KEY,
     ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
     // langfuse caching
     LANGFUSE_CACHE_API_KEY_ENABLED: process.env.LANGFUSE_CACHE_API_KEY_ENABLED,
