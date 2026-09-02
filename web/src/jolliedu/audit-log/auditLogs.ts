@@ -1,8 +1,56 @@
 import { type NextApiRequest, type NextApiResponse } from "next";
 import * as z from "zod";
-import { prisma } from "@langfuse/shared/src/db";
+import {
+  prisma,
+  type AuditLog,
+  AuditLogRecordType,
+} from "@langfuse/shared/src/db";
 import { logger } from "@langfuse/shared/src/server";
 import { verifyJolliEduAdminAuth } from "@/src/jolliedu/auth";
+
+type UserActor = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  image: string | null;
+};
+
+/**
+ * Attach the acting user/API key to each audit log row. Mirrors the MIT
+ * `mapAuditLogsWithActors` helper (web/src/server/api/routers/auditLogs.ts).
+ */
+function mapAuditLogsWithActors(
+  auditLogs: AuditLog[],
+  userMap: Map<string, UserActor>,
+  apiKeyMap: Map<string, { id: string; publicKey: string }>,
+) {
+  return auditLogs.map((log) => {
+    if (log.type === AuditLogRecordType.API_KEY) {
+      return {
+        ...log,
+        actor: {
+          type: log.type,
+          body: apiKeyMap.get(log.apiKeyId ?? "") ?? {
+            id: log.apiKeyId,
+            publicKey: null,
+          },
+        },
+      };
+    }
+    return {
+      ...log,
+      actor: {
+        type: AuditLogRecordType.USER,
+        body: userMap.get(log.userId ?? "") ?? {
+          id: log.userId,
+          name: null,
+          email: null,
+          image: null,
+        },
+      },
+    };
+  });
+}
 
 const ListQuery = z.object({
   // At least one scope is required; enforced below.
@@ -56,10 +104,39 @@ export async function handleJolliEduAuditLogs(
       prisma.auditLog.count({ where }),
     ]);
 
-    // TODO(later): join actors (user/apiKey) for display, as the MIT router's
-    // `mapAuditLogsWithActors` helper does. Raw rows are returned for now.
+    // Resolve actors (user / API key) for display, scoped to the same
+    // project or org as the query so we never leak identities across tenants.
+    const userIds = [
+      ...new Set(auditLogs.flatMap((log) => (log.userId ? [log.userId] : []))),
+    ];
+    const apiKeyIds = [
+      ...new Set(
+        auditLogs.flatMap((log) => (log.apiKeyId ? [log.apiKeyId] : [])),
+      ),
+    ];
+    const apiKeyWhere = q.projectId
+      ? { id: { in: apiKeyIds }, projectId: q.projectId }
+      : {
+          id: { in: apiKeyIds },
+          orgId: q.orgId!,
+          scope: "ORGANIZATION" as const,
+        };
+
+    const [users, apiKeys] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, name: true, email: true, image: true },
+      }),
+      prisma.apiKey.findMany({
+        where: apiKeyWhere,
+        select: { id: true, publicKey: true },
+      }),
+    ]);
+    const userMap = new Map(users.map((u) => [u.id, u]));
+    const apiKeyMap = new Map(apiKeys.map((k) => [k.id, k]));
+
     return res.status(200).json({
-      auditLogs,
+      auditLogs: mapAuditLogsWithActors(auditLogs, userMap, apiKeyMap),
       totalCount,
       page: q.page,
       limit: q.limit,

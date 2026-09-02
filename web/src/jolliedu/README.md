@@ -111,17 +111,18 @@ needs `docker compose up -d` (recreates the container, no image rebuild).
 All requests send `Authorization: Bearer $SELF_ADMIN_API_KEY`. Base URL below is
 `http://localhost:3000`.
 
-| Method | Path                                                            | Purpose                                 |
-| ------ | --------------------------------------------------------------- | --------------------------------------- |
-| POST   | `/api/jolliedu/admin/organizations`                             | create org                              |
-| GET    | `/api/jolliedu/admin/organizations`                             | list orgs                               |
-| POST   | `/api/jolliedu/admin/organizations/{orgId}/projects`            | create project                          |
-| GET    | `/api/jolliedu/admin/organizations/{orgId}/projects`            | list projects                           |
-| POST   | `/api/jolliedu/admin/projects/{projectId}/apiKeys`              | mint project key (secret returned once) |
-| GET    | `/api/jolliedu/admin/projects/{projectId}/apiKeys`              | list keys (masked)                      |
-| GET    | `/api/jolliedu/audit-log?orgId=&projectId=&page=&limit=`        | list audit logs                         |
-| DELETE | `/api/jolliedu/data-deletion/projects/{projectId}?confirm=true` | delete project (async)                  |
-| POST   | `/api/jolliedu/data-deletion/projects/{projectId}/traces`       | delete traces (body `{traceIds:[]}`)    |
+| Method | Path                                                             | Purpose                                 |
+| ------ | ---------------------------------------------------------------- | --------------------------------------- |
+| POST   | `/api/jolliedu/admin/organizations`                              | create org                              |
+| GET    | `/api/jolliedu/admin/organizations`                              | list orgs                               |
+| POST   | `/api/jolliedu/admin/organizations/{orgId}/projects`             | create project                          |
+| GET    | `/api/jolliedu/admin/organizations/{orgId}/projects`             | list projects                           |
+| POST   | `/api/jolliedu/admin/projects/{projectId}/apiKeys`               | mint project key (secret returned once) |
+| GET    | `/api/jolliedu/admin/projects/{projectId}/apiKeys`               | list keys (masked)                      |
+| GET    | `/api/jolliedu/audit-log?orgId=&projectId=&page=&limit=`         | list audit logs                         |
+| DELETE | `/api/jolliedu/data-deletion/projects/{projectId}?confirm=true`  | delete project (async)                  |
+| POST   | `/api/jolliedu/data-deletion/projects/{projectId}/traces`        | delete traces (body `{traceIds:[]}`)    |
+| DELETE | `/api/jolliedu/data-deletion/organizations/{orgId}?confirm=true` | delete org (all projects must be gone)  |
 
 ## End-to-end flow
 
@@ -181,10 +182,9 @@ rejected by ingestion.
 - **Org visibility needs a member.** A static token has no creator user, so
   orgs are headless (invisible in the UI) unless you pass `ownerEmail` on
   create to attach an existing user as OWNER.
-- **Org deletion is not implemented** here — the MIT `organization.delete`
-  requires every project to be deleted first (relies on cascade). Add a
-  `data-deletion/orgDeletion.ts` handler if needed.
-- **Audit-log actors are not joined.** Rows return raw `userId`/`apiKeyId`; the
-  MIT `mapAuditLogsWithActors` helper can be mirrored to resolve display names.
+- **Org deletion requires all projects gone first.** `DELETE
+/organizations/{orgId}` mirrors the MIT `organization.delete`: it refuses
+  (`409`) while any project row exists (including soft-deleted ones still being
+  hard-deleted), then deletes the org and relies on Prisma cascade.
 - These endpoints have **no RBAC** — a single static token is all-or-nothing.
   Keep `SELF_ADMIN_API_KEY` secret and rotate it if leaked.
