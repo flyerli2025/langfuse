@@ -39,12 +39,15 @@ export function verifyJolliEduAdminAuth(
   }
   const providedToken = authHeader.slice("Bearer ".length);
 
-  // Constant-time comparison. Both tokens are first hashed to a fixed 32-byte
-  // sha256 digest so timingSafeEqual always sees equal-length Buffers (it
-  // throws on length mismatch), and so the raw secret's length is never leaked
-  // through an early length check.
+  // Constant-time comparison. Both tokens are run through HMAC with a random
+  // per-request key so timingSafeEqual always sees equal-length (32-byte)
+  // digests — it throws on length mismatch — without leaking the raw secret's
+  // length through an early length check. HMAC (a keyed MAC), not a bare hash,
+  // is used so this is not treated as insecure password hashing; the token is
+  // a high-entropy random value, so no slow KDF is warranted.
+  const hmacKey = crypto.randomBytes(32);
   const digest = (value: string) =>
-    crypto.createHash("sha256").update(value, "utf8").digest();
+    crypto.createHmac("sha256", hmacKey).update(value, "utf8").digest();
   const isValid = crypto.timingSafeEqual(
     digest(providedToken),
     digest(configuredToken),
