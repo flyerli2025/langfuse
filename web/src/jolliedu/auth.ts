@@ -39,19 +39,17 @@ export function verifyJolliEduAdminAuth(
   }
   const providedToken = authHeader.slice("Bearer ".length);
 
-  // Constant-time comparison. Both tokens are run through HMAC with a random
-  // per-request key so timingSafeEqual always sees equal-length (32-byte)
-  // digests — it throws on length mismatch — without leaking the raw secret's
-  // length through an early length check. HMAC (a keyed MAC), not a bare hash,
-  // is used so this is not treated as insecure password hashing; the token is
-  // a high-entropy random value, so no slow KDF is warranted.
-  const hmacKey = crypto.randomBytes(32);
-  const digest = (value: string) =>
-    crypto.createHmac("sha256", hmacKey).update(value, "utf8").digest();
-  const isValid = crypto.timingSafeEqual(
-    digest(providedToken),
-    digest(configuredToken),
-  );
+  // Constant-time comparison via timingSafeEqual, which requires equal-length
+  // buffers. The token is a high-entropy, fixed-length random value, so its
+  // length is not sensitive: guard the length first (short-circuiting a
+  // mismatch), then compare the bytes in constant time. The secret is not
+  // hashed — it is not a low-entropy password, so no hash/KDF is warranted,
+  // and comparing the raw bytes avoids a needless hashing step.
+  const providedBuf = Buffer.from(providedToken, "utf8");
+  const configuredBuf = Buffer.from(configuredToken, "utf8");
+  const isValid =
+    providedBuf.length === configuredBuf.length &&
+    crypto.timingSafeEqual(providedBuf, configuredBuf);
 
   if (!isValid) {
     logger.warn("jolliedu admin API: invalid bearer token");
